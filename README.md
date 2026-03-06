@@ -1,4 +1,4 @@
-# Carnival Casino Slot Analytics
+# Carni Casino Slot Analytics
 
 An end-to-end casino slot machine analytics system built on Snowflake, featuring synthetic data generation, ship-specific denomination profiles, machine learning models, an interactive Streamlit dashboard with a bank allocation tool, semantic views for natural language queries, and a Cortex Agent for Snowflake Intelligence.
 
@@ -24,14 +24,14 @@ An end-to-end casino slot machine analytics system built on Snowflake, featuring
 
 ## Overview
 
-This project demonstrates a complete analytics solution for a cruise ship casino operation, simulating Carnival Corporation's slot machine ecosystem. It includes:
+This project demonstrates a complete analytics solution for a cruise ship casino operation, simulating Carni Corporation's slot machine ecosystem. It includes:
 
 | Component | Description |
 |-----------|-------------|
 | **Synthetic Data** | 5,000 members + 100,000 slot play sessions with ship-specific denomination profiles |
 | **ML Models** | 4 Model Registry models + 3 built-in Snowflake ML classifiers |
 | **Bank Allocator** | Denomination mix optimizer for wired machine banks per ship |
-| **Streamlit Dashboard** | Interactive 4-tab analytics application with Carnival branding |
+| **Streamlit Dashboard** | Interactive 4-tab analytics application with Carni branding |
 | **Semantic View** | Natural language SQL via Cortex Analyst |
 | **Cortex Search** | RAG search over 15 casino policies |
 | **Cortex Agent** | Full-stack AI assistant for Snowflake Intelligence (5 tools) |
@@ -42,7 +42,7 @@ This project demonstrates a complete analytics solution for a cruise ship casino
 
 ```
 +-----------------------------------------------------------------------------+
-|                           CARNIVAL_CASINO Database                           |
+|                           Carni_CASINO Database                           |
 +-----------------------------------------------------------------------------+
 |  SLOT_ANALYTICS Schema                                                      |
 |  +----------------------------------------------------------------------+   |
@@ -87,7 +87,7 @@ This project demonstrates a complete analytics solution for a cruise ship casino
                               v
 +-----------------------------------------------------------------------------+
 |  SNOWFLAKE_INTELLIGENCE.AGENTS                                              |
-|  +-- CARNIVAL_CASINO_AGENT (5 tools: Analyst + Search + 3 ML)              |
+|  +-- Carni_CASINO_AGENT (5 tools: Analyst + Search + 3 ML)              |
 +-----------------------------------------------------------------------------+
 ```
 
@@ -133,14 +133,14 @@ ship-specific profiles:
 
 | Ship | Primary Denominations | Profile |
 |------|----------------------|---------|
-| **Carnival Breeze** | Penny (22%), Quarter (20%), Nickel (19%) | Budget / Family |
+| **Carni Breeze** | Penny (22%), Quarter (20%), Nickel (19%) | Budget / Family |
 | **Mardi Gras** | $50 (21%), $20 (18%), $100 (17%) | Flagship / Premium |
-| **Carnival Jubilee** | $20 (18%), $10 (17%), $50 (16%) | High Rollers |
-| **Carnival Horizon** | $1 (18%), $5 (16%), Quarter (15%) | Balanced Mid-Range |
-| **Carnival Magic** | Penny (20%), Nickel (17%), Quarter (15%) | Budget / Traditional |
-| **Carnival Vista** | Penny (15%), $1 (14%), Nickel (14%) | Balanced Low-Mid |
-| **Carnival Panorama** | $1 (15%), $5 (15%), $10 (14%) | Mid-High Range |
-| **Carnival Celebration** | $1 (15%), $5 (14%), Quarter (13%) | Balanced |
+| **Carni Jubilee** | $20 (18%), $10 (17%), $50 (16%) | High Rollers |
+| **Carni Horizon** | $1 (18%), $5 (16%), Quarter (15%) | Balanced Mid-Range |
+| **Carni Magic** | Penny (20%), Nickel (17%), Quarter (15%) | Budget / Traditional |
+| **Carni Vista** | Penny (15%), $1 (14%), Nickel (14%) | Balanced Low-Mid |
+| **Carni Panorama** | $1 (15%), $5 (15%), $10 (14%) | Mid-High Range |
+| **Carni Celebration** | $1 (15%), $5 (14%), Quarter (13%) | Balanced |
 
 This approach models the real-world casino operations concept where slot machines are grouped
 in **banks** and priced at the ship level based on passenger demographics, not individually.
@@ -194,7 +194,7 @@ SNOWFLAKE_CONNECTION_NAME=demo python models/train_all_models.py --model bank
 
 ### 1. Streamlit Dashboard
 
-A 4-tab interactive analytics application with Carnival brand styling:
+A 4-tab interactive analytics application with Carni brand styling:
 
 | Tab | Features |
 |-----|----------|
@@ -277,7 +277,7 @@ SNOWFLAKE_CONNECTION_NAME=demo python models/train_all_models.py
 **Step 3: Upload Streamlit app to stage**
 
 ```sql
-PUT 'file:///path/to/CoCo_Carnival/streamlit_app.py' @CARNIVAL_CASINO.SLOT_ANALYTICS.STREAMLIT_STAGE 
+PUT 'file:///path/to/CoCo_Carni/streamlit_app.py' @Carni_CASINO.SLOT_ANALYTICS.STREAMLIT_STAGE 
     AUTO_COMPRESS=FALSE OVERWRITE=TRUE;
 ```
 
@@ -297,30 +297,30 @@ SNOWFLAKE_CONNECTION_NAME=demo streamlit run streamlit_app.py
 
 ### Cortex Agent
 
-Access in Snowsight: AI & ML > Snowflake Intelligence > Select "Carnival Casino Analyst"
+Access in Snowsight: AI & ML > Snowflake Intelligence > Select "Carni Casino Analyst"
 
 **Example Questions:**
 - "What is the total revenue by ship?"
 - "What is the minimum age to gamble?"
-- "Which games are most popular on Carnival Breeze?"
+- "Which games are most popular on Carni Breeze?"
 - "Predict the preferred denomination for member 1001"
 - "What bet category would member 2500 fall into?"
-- "What win rate should we expect for Carnival Breeze on Saturday with 150 sessions?"
+- "What win rate should we expect for Carni Breeze on Saturday with 150 sessions?"
 
 ### Direct SQL Queries
 
 ```sql
 -- Ship denomination demand profile
-SELECT * FROM CARNIVAL_CASINO.SLOT_ANALYTICS.SHIP_BANK_DEMAND
+SELECT * FROM Carni_CASINO.SLOT_ANALYTICS.SHIP_BANK_DEMAND
 WHERE SHIP_NAME = 'Mardi Gras' ORDER BY DENOMINATION;
 
 -- ML predictions
-CALL CARNIVAL_CASINO.SLOT_ANALYTICS.PREDICT_DENOMINATION(1001);
-CALL CARNIVAL_CASINO.SLOT_ANALYTICS.PREDICT_BET_CATEGORY(1001);
-CALL CARNIVAL_CASINO.SLOT_ANALYTICS.PREDICT_DENOMINATION_V2(1001);
+CALL Carni_CASINO.SLOT_ANALYTICS.PREDICT_DENOMINATION(1001);
+CALL Carni_CASINO.SLOT_ANALYTICS.PREDICT_BET_CATEGORY(1001);
+CALL Carni_CASINO.SLOT_ANALYTICS.PREDICT_DENOMINATION_V2(1001);
 
 -- Feature importance
-CALL CARNIVAL_CASINO.SLOT_ANALYTICS.DENOMINATION_CLASSIFIER!SHOW_FEATURE_IMPORTANCE();
+CALL Carni_CASINO.SLOT_ANALYTICS.DENOMINATION_CLASSIFIER!SHOW_FEATURE_IMPORTANCE();
 ```
 
 ---
@@ -328,7 +328,7 @@ CALL CARNIVAL_CASINO.SLOT_ANALYTICS.DENOMINATION_CLASSIFIER!SHOW_FEATURE_IMPORTA
 ## Project Structure
 
 ```
-CoCo_Carnival/
+CoCo_Carni/
 |-- README.md                           # This file
 |-- streamlit_app.py                    # Streamlit dashboard (main app)
 |-- snowpark_session.py                 # Snowpark session helper
@@ -348,7 +348,7 @@ CoCo_Carnival/
 |   |-- 08_cortex_agent.sql             # Snowflake Intelligence agent (5 tools)
 |   +-- 09_streamlit_deploy.sql         # Streamlit app deployment
 +-- assets/
-    +-- carnival-logo.svg               # Carnival brand logo
+    +-- Carni-logo.svg               # Carni brand logo
 ```
 
 ---
@@ -357,8 +357,8 @@ CoCo_Carnival/
 
 | Object Type | Name | Location |
 |-------------|------|----------|
-| Database | `CARNIVAL_CASINO` | Account |
-| Schema | `SLOT_ANALYTICS` | CARNIVAL_CASINO |
+| Database | `Carni_CASINO` | Account |
+| Schema | `SLOT_ANALYTICS` | Carni_CASINO |
 | Tables (13) | MEMBER_DEMOGRAPHICS, SLOT_PLAY_HISTORY, SHIP_BANK_DEMAND, CASINO_POLICIES, MEMBER_SLOT_FEATURES, ML_TRAINING_DATA, SHIP_DAILY_METRICS, SHIP_WIN_RATE_TRAINING, DENOMINATION_PREDICTIONS, BET_PREDICTIONS, SHIP_WIN_RATE_PREDICTIONS, MODEL_EVALUATION_SUMMARY, SLOT_PLAY_HISTORY_OLD | SLOT_ANALYTICS |
 | ML Models (Built-in) | DENOMINATION_CLASSIFIER, BET_AMOUNT_CLASSIFIER, SHIP_WIN_RATE_CLASSIFIER | SLOT_ANALYTICS |
 | ML Models (Registry) | SLOT_DENOMINATION_MODEL, DENOMINATION_CLASSIFIER_REG, BET_AMOUNT_CLASSIFIER_REG, BANK_DENOMINATION_MODEL | SLOT_ANALYTICS |
@@ -366,7 +366,7 @@ CoCo_Carnival/
 | Semantic View | CASINO_SLOT_SEMANTIC_VIEW | SLOT_ANALYTICS |
 | Cortex Search | CASINO_POLICIES_SEARCH | SLOT_ANALYTICS |
 | Streamlit | CASINO_ANALYTICS_APP | SLOT_ANALYTICS |
-| Agent | CARNIVAL_CASINO_AGENT (5 tools) | SNOWFLAKE_INTELLIGENCE.AGENTS |
+| Agent | Carni_CASINO_AGENT (5 tools) | SNOWFLAKE_INTELLIGENCE.AGENTS |
 
 ---
 
