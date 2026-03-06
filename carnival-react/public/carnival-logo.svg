@@ -1,0 +1,10 @@
+<svg width="200" height="50" viewBox="0 0 200 50" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <g>
+    <path d="M5 10 L25 10 L35 40 L15 40 Z" fill="#B61B38"/>
+    <path d="M25 10 L45 10 L35 40 L15 40 Z" fill="#014E8F"/>
+    <path d="M15 8 L5 10 L25 10 Z" fill="#B61B38"/>
+    <path d="M25 8 L25 10 L45 10 L35 8 Z" fill="#014E8F"/>
+    <ellipse cx="25" cy="8" rx="15" ry="4" fill="white" stroke="#014E8F" stroke-width="1"/>
+  </g>
+  <text x="52" y="35" font-family="Arial, sans-serif" font-size="28" font-weight="bold" font-style="italic" fill="#014E8F">Carnival</text>
+</svg>

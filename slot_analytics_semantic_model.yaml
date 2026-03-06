@@ -1,0 +1,512 @@
+name: carnival_casino_slot_analytics
+description: >
+  Semantic view for Carnival Corporation casino slot machine analytics.
+  Covers member demographics, slot play history, and aggregated member-level
+  slot features including preferred denomination, bet patterns, and win rates.
+
+tables:
+  - name: MEMBER_DEMOGRAPHICS
+    base_table:
+      database: CARNIVAL_CASINO
+      schema: SLOT_ANALYTICS
+      table: MEMBER_DEMOGRAPHICS
+    description: >
+      Casino loyalty program members with demographic information including
+      age, gender, membership tier, home state, income bracket, and risk appetite.
+    dimensions:
+      - name: MEMBER_ID
+        description: Unique identifier for each casino loyalty member.
+        expr: MEMBER_ID
+        data_type: NUMBER
+        unique: true
+      - name: GENDER
+        description: Gender of the member. M for Male, F for Female.
+        expr: GENDER
+        data_type: VARCHAR
+        is_enum: true
+        sample_values:
+          - "M"
+          - "F"
+      - name: MEMBERSHIP_TIER
+        synonyms:
+          - tier
+          - loyalty tier
+          - casino tier
+        description: Casino loyalty tier level.
+        expr: MEMBERSHIP_TIER
+        data_type: VARCHAR
+        is_enum: true
+        sample_values:
+          - "Basic"
+          - "Bronze"
+          - "Silver"
+          - "Gold"
+          - "Platinum"
+      - name: HOME_STATE
+        synonyms:
+          - state
+          - residence state
+        description: US state where the member resides.
+        expr: HOME_STATE
+        data_type: VARCHAR
+      - name: RISK_APPETITE
+        synonyms:
+          - risk level
+          - risk profile
+        description: Member gambling risk profile.
+        expr: RISK_APPETITE
+        data_type: VARCHAR
+        is_enum: true
+        sample_values:
+          - "Low"
+          - "Medium"
+          - "High"
+          - "VIP"
+      - name: MARITAL_STATUS
+        description: Marital status of the member.
+        expr: MARITAL_STATUS
+        data_type: VARCHAR
+        is_enum: true
+        sample_values:
+          - "Single"
+          - "Married"
+          - "Divorced"
+      - name: INCOME_BRACKET
+        synonyms:
+          - income
+          - income range
+        description: Annual household income range.
+        expr: INCOME_BRACKET
+        data_type: VARCHAR
+        is_enum: true
+        sample_values:
+          - "Under $50K"
+          - "$50K-$75K"
+          - "$75K-$100K"
+          - "$100K-$150K"
+          - "Over $150K"
+    time_dimensions:
+      - name: ENROLLMENT_DATE
+        synonyms:
+          - signup date
+          - join date
+        description: Date when the member enrolled in the casino loyalty program.
+        expr: ENROLLMENT_DATE
+        data_type: DATE
+    facts:
+      - name: AGE
+        description: Age of the member in years.
+        expr: AGE
+        data_type: NUMBER
+      - name: TOTAL_CRUISES
+        synonyms:
+          - cruises
+          - number of cruises
+        description: Total number of cruises the member has taken with Carnival.
+        expr: TOTAL_CRUISES
+        data_type: NUMBER
+      - name: LIFETIME_SPEND
+        synonyms:
+          - total spend
+          - lifetime spending
+        description: Total lifetime spending amount in US dollars across all cruises.
+        expr: LIFETIME_SPEND
+        data_type: NUMBER
+    metrics:
+      - name: TOTAL_MEMBERS
+        synonyms:
+          - member count
+          - number of members
+        description: Total number of casino loyalty members.
+        expr: COUNT(*)
+      - name: AVG_AGE
+        description: Average age of members.
+        expr: AVG(AGE)
+      - name: AVG_LIFETIME_SPEND
+        description: Average lifetime spend per member in US dollars.
+        expr: AVG(LIFETIME_SPEND)
+
+  - name: SLOT_PLAY_HISTORY
+    base_table:
+      database: CARNIVAL_CASINO
+      schema: SLOT_ANALYTICS
+      table: SLOT_PLAY_HISTORY
+    description: >
+      Individual slot machine play sessions on Carnival cruise ships.
+      Each row represents one gaming session with details on the game,
+      denomination, bets, winnings, and session duration.
+    dimensions:
+      - name: PLAY_ID
+        description: Unique identifier for each play session.
+        expr: PLAY_ID
+        data_type: NUMBER
+        unique: true
+      - name: MEMBER_ID
+        description: Member who played this session.
+        expr: MEMBER_ID
+        data_type: NUMBER
+      - name: SHIP_NAME
+        synonyms:
+          - ship
+          - cruise ship
+          - vessel
+        description: Name of the Carnival cruise ship where the session took place.
+        expr: SHIP_NAME
+        data_type: VARCHAR
+        is_enum: true
+        sample_values:
+          - "Carnival Dream"
+          - "Carnival Vista"
+          - "Carnival Celebration"
+          - "Carnival Jubilee"
+          - "Mardi Gras"
+          - "Carnival Horizon"
+          - "Carnival Breeze"
+      - name: DENOMINATION
+        synonyms:
+          - denom
+          - slot denomination
+          - machine denomination
+        description: Slot machine denomination in dollars.
+        expr: DENOMINATION
+        data_type: NUMBER
+      - name: GAME_NAME
+        synonyms:
+          - game
+          - slot game
+          - machine name
+        description: Name of the slot machine game played.
+        expr: GAME_NAME
+        data_type: VARCHAR
+        sample_values:
+          - "Wheel of Fortune"
+          - "Buffalo Gold"
+          - "Lightning Link"
+          - "Dragon Link"
+          - "Double Diamond"
+          - "Blazing 7s"
+          - "Quick Hit"
+          - "Lock It Link"
+          - "Dancing Drums"
+          - "Jackpot Party"
+      - name: GAME_TYPE
+        synonyms:
+          - machine type
+          - slot type
+        description: Category of slot machine.
+        expr: GAME_TYPE
+        data_type: VARCHAR
+        is_enum: true
+        sample_values:
+          - "Classic"
+          - "Video"
+          - "Progressive"
+          - "Multi-Line"
+      - name: TIME_OF_DAY
+        synonyms:
+          - session time
+          - play time
+        description: Time period when the session occurred.
+        expr: TIME_OF_DAY
+        data_type: VARCHAR
+        is_enum: true
+        sample_values:
+          - "Morning"
+          - "Afternoon"
+          - "Evening"
+    time_dimensions:
+      - name: PLAY_DATE
+        synonyms:
+          - session date
+          - date played
+        description: Date when the slot session occurred.
+        expr: PLAY_DATE
+        data_type: DATE
+    facts:
+      - name: NUM_SPINS
+        synonyms:
+          - spins
+          - number of spins
+        description: Number of spins the member made during the session.
+        expr: NUM_SPINS
+        data_type: NUMBER
+      - name: BET_PER_SPIN
+        synonyms:
+          - bet amount
+          - wager per spin
+        description: Average bet amount per spin in US dollars.
+        expr: BET_PER_SPIN
+        data_type: NUMBER
+      - name: TOTAL_WAGERED
+        synonyms:
+          - amount wagered
+          - total bet
+        description: Total amount wagered during the session in US dollars.
+        expr: TOTAL_WAGERED
+        data_type: NUMBER
+      - name: TOTAL_WON
+        synonyms:
+          - winnings
+          - amount won
+        description: Total amount won during the session in US dollars.
+        expr: TOTAL_WON
+        data_type: NUMBER
+      - name: NET_RESULT
+        synonyms:
+          - profit
+          - win/loss
+          - net win
+        description: Net win or loss for the session in US dollars. Positive means the member won.
+        expr: NET_RESULT
+        data_type: NUMBER
+      - name: SESSION_DURATION_MINS
+        synonyms:
+          - duration
+          - session length
+          - play time minutes
+        description: Duration of the play session in minutes.
+        expr: SESSION_DURATION_MINS
+        data_type: NUMBER
+    metrics:
+      - name: TOTAL_SESSIONS
+        synonyms:
+          - session count
+          - number of sessions
+        description: Total number of play sessions.
+        expr: COUNT(*)
+      - name: TOTAL_AMOUNT_WAGERED
+        synonyms:
+          - total revenue
+          - gross gaming revenue
+        description: Sum of all amounts wagered in US dollars.
+        expr: SUM(TOTAL_WAGERED)
+      - name: TOTAL_AMOUNT_WON
+        description: Sum of all amounts won by players in US dollars.
+        expr: SUM(TOTAL_WON)
+      - name: AVG_BET
+        synonyms:
+          - average bet
+          - mean bet
+        description: Average bet per spin across all sessions.
+        expr: AVG(BET_PER_SPIN)
+      - name: TOTAL_SPINS
+        description: Total number of spins across all sessions.
+        expr: SUM(NUM_SPINS)
+      - name: UNIQUE_PLAYERS
+        description: Number of distinct members who played.
+        expr: COUNT(DISTINCT MEMBER_ID)
+      - name: AVG_SESSION_DURATION
+        description: Average session duration in minutes.
+        expr: AVG(SESSION_DURATION_MINS)
+    filters:
+      - name: high_denomination
+        description: Sessions on high denomination machines ($5 and above).
+        expr: DENOMINATION >= 5.00
+      - name: penny_slots
+        description: Sessions on penny slot machines ($0.01 denomination).
+        expr: DENOMINATION = 0.01
+
+  - name: MEMBER_SLOT_FEATURES
+    base_table:
+      database: CARNIVAL_CASINO
+      schema: SLOT_ANALYTICS
+      table: MEMBER_SLOT_FEATURES
+    description: >
+      Aggregated member-level slot play features combining demographics with
+      gaming behavior metrics. One row per member.
+    dimensions:
+      - name: MEMBER_ID
+        description: Unique identifier for each casino loyalty member.
+        expr: MEMBER_ID
+        data_type: NUMBER
+        unique: true
+      - name: GENDER
+        description: Gender of the member.
+        expr: GENDER
+        data_type: VARCHAR
+      - name: MEMBERSHIP_TIER
+        description: Casino loyalty tier level.
+        expr: MEMBERSHIP_TIER
+        data_type: VARCHAR
+      - name: HOME_STATE
+        description: US state where the member resides.
+        expr: HOME_STATE
+        data_type: VARCHAR
+      - name: RISK_APPETITE
+        description: Gambling risk profile.
+        expr: RISK_APPETITE
+        data_type: VARCHAR
+      - name: MARITAL_STATUS
+        description: Marital status.
+        expr: MARITAL_STATUS
+        data_type: VARCHAR
+      - name: INCOME_BRACKET
+        description: Annual household income range.
+        expr: INCOME_BRACKET
+        data_type: VARCHAR
+      - name: PREFERRED_DENOMINATION
+        synonyms:
+          - favorite denomination
+          - preferred denom
+        description: Most frequently played slot denomination in dollars.
+        expr: PREFERRED_DENOMINATION
+        data_type: NUMBER
+      - name: PREFERRED_GAME_TYPE
+        description: Most frequently played game type.
+        expr: PREFERRED_GAME_TYPE
+        data_type: VARCHAR
+      - name: PREFERRED_GAME
+        synonyms:
+          - favorite game
+        description: Most frequently played slot game name.
+        expr: PREFERRED_GAME
+        data_type: VARCHAR
+      - name: PREFERRED_TIME_OF_DAY
+        description: Most common time of day for play sessions.
+        expr: PREFERRED_TIME_OF_DAY
+        data_type: VARCHAR
+      - name: MOST_PLAYED_SHIP
+        synonyms:
+          - favorite ship
+        description: Ship where the member has played the most.
+        expr: MOST_PLAYED_SHIP
+        data_type: VARCHAR
+    facts:
+      - name: AGE
+        description: Age of the member in years.
+        expr: AGE
+        data_type: NUMBER
+      - name: TOTAL_CRUISES
+        description: Total number of cruises taken.
+        expr: TOTAL_CRUISES
+        data_type: NUMBER
+      - name: LIFETIME_SPEND
+        description: Total lifetime spending in US dollars.
+        expr: LIFETIME_SPEND
+        data_type: NUMBER
+      - name: MEMBERSHIP_DAYS
+        description: Number of days since enrollment.
+        expr: MEMBERSHIP_DAYS
+        data_type: NUMBER
+      - name: TOTAL_SESSIONS
+        description: Total number of slot play sessions.
+        expr: TOTAL_SESSIONS
+        data_type: NUMBER
+      - name: TOTAL_SPINS
+        description: Total number of spins across all sessions.
+        expr: TOTAL_SPINS
+        data_type: NUMBER
+      - name: AVG_BET_PER_SPIN
+        description: Average bet amount per spin in US dollars.
+        expr: AVG_BET_PER_SPIN
+        data_type: NUMBER
+      - name: TOTAL_WAGERED
+        description: Total amount wagered in US dollars.
+        expr: TOTAL_WAGERED
+        data_type: NUMBER
+      - name: TOTAL_WON
+        description: Total amount won in US dollars.
+        expr: TOTAL_WON
+        data_type: NUMBER
+      - name: NET_RESULT
+        description: Net total win or loss in US dollars.
+        expr: NET_RESULT
+        data_type: NUMBER
+      - name: AVG_SESSION_DURATION
+        description: Average duration of play sessions in minutes.
+        expr: AVG_SESSION_DURATION
+        data_type: NUMBER
+      - name: WIN_RATE_PCT
+        synonyms:
+          - win rate
+          - return percentage
+        description: Percentage of wagered amount won back.
+        expr: WIN_RATE_PCT
+        data_type: NUMBER
+      - name: SHIPS_PLAYED
+        description: Number of distinct ships played on.
+        expr: SHIPS_PLAYED
+        data_type: NUMBER
+      - name: GAMES_PLAYED
+        description: Number of distinct slot games played.
+        expr: GAMES_PLAYED
+        data_type: NUMBER
+      - name: DENOMINATIONS_PLAYED
+        description: Number of distinct denominations played.
+        expr: DENOMINATIONS_PLAYED
+        data_type: NUMBER
+    metrics:
+      - name: MEMBER_COUNT
+        description: Total number of members.
+        expr: COUNT(*)
+      - name: AVG_MEMBER_WAGERED
+        description: Average total wagered per member.
+        expr: AVG(TOTAL_WAGERED)
+      - name: AVG_WIN_RATE
+        description: Average win rate percentage across members.
+        expr: AVG(WIN_RATE_PCT)
+
+relationships:
+  - name: member_to_plays
+    left_table: MEMBER_DEMOGRAPHICS
+    right_table: SLOT_PLAY_HISTORY
+    relationship_columns:
+      - left_column: MEMBER_ID
+        right_column: MEMBER_ID
+  - name: member_to_features
+    left_table: MEMBER_DEMOGRAPHICS
+    right_table: MEMBER_SLOT_FEATURES
+    relationship_columns:
+      - left_column: MEMBER_ID
+        right_column: MEMBER_ID
+
+verified_queries:
+  - name: total_members_by_tier
+    question: How many members are in each membership tier?
+    use_as_onboarding_question: true
+    sql: |
+      SELECT MEMBERSHIP_TIER, COUNT(*) AS MEMBER_COUNT
+      FROM CARNIVAL_CASINO.SLOT_ANALYTICS.MEMBER_DEMOGRAPHICS
+      GROUP BY MEMBERSHIP_TIER
+      ORDER BY MEMBER_COUNT DESC
+  - name: top_games_by_revenue
+    question: What are the top 5 slot games by total wagered amount?
+    use_as_onboarding_question: true
+    sql: |
+      SELECT GAME_NAME, SUM(TOTAL_WAGERED::FLOAT) AS TOTAL_WAGERED
+      FROM CARNIVAL_CASINO.SLOT_ANALYTICS.SLOT_PLAY_HISTORY
+      GROUP BY GAME_NAME
+      ORDER BY TOTAL_WAGERED DESC
+      LIMIT 5
+  - name: avg_bet_by_denomination
+    question: What is the average bet per spin for each denomination?
+    sql: |
+      SELECT DENOMINATION, ROUND(AVG(BET_PER_SPIN), 2) AS AVG_BET
+      FROM CARNIVAL_CASINO.SLOT_ANALYTICS.SLOT_PLAY_HISTORY
+      GROUP BY DENOMINATION
+      ORDER BY DENOMINATION
+  - name: ship_revenue_comparison
+    question: Which ship generates the most slot machine revenue?
+    use_as_onboarding_question: true
+    sql: |
+      SELECT SHIP_NAME, ROUND(SUM(TOTAL_WAGERED::FLOAT), 2) AS TOTAL_REVENUE
+      FROM CARNIVAL_CASINO.SLOT_ANALYTICS.SLOT_PLAY_HISTORY
+      GROUP BY SHIP_NAME
+      ORDER BY TOTAL_REVENUE DESC
+  - name: high_value_members
+    question: Who are the top 10 members by total amount wagered?
+    sql: |
+      SELECT MEMBER_ID, TOTAL_WAGERED, TOTAL_WON, WIN_RATE_PCT, MEMBERSHIP_TIER, PREFERRED_DENOMINATION
+      FROM CARNIVAL_CASINO.SLOT_ANALYTICS.MEMBER_SLOT_FEATURES
+      ORDER BY TOTAL_WAGERED DESC
+      LIMIT 10
+  - name: monthly_revenue_trend
+    question: What is the monthly total wagered trend?
+    sql: |
+      SELECT
+        DATE_TRUNC('MONTH', PLAY_DATE)::DATE AS MONTH,
+        ROUND(SUM(TOTAL_WAGERED::FLOAT), 2) AS TOTAL_WAGERED,
+        COUNT(DISTINCT MEMBER_ID) AS UNIQUE_PLAYERS
+      FROM CARNIVAL_CASINO.SLOT_ANALYTICS.SLOT_PLAY_HISTORY
+      GROUP BY MONTH
+      ORDER BY MONTH
