@@ -600,6 +600,436 @@ with tab2:
     st.altair_chart(chart, use_container_width=True)
 
 with tab3:
+    st.markdown('##### 🎰 Casino Floor — Bank Denomination Optimizer')
+    st.caption("Select a ship, departure port, and voyage profile. Then click a machine bank on the casino floor to see the ML-optimized denomination for that bank based on passenger demographics.")
+
+    BANK_DENOM_LABELS = ['$0.01', '$0.05', '$0.25', '$1.00', '$5.00', '$10.00', '$20.00', '$50.00', '$100.00']
+    DENOM_VALUES = [0.01, 0.05, 0.25, 1.00, 5.00, 10.00, 20.00, 50.00, 100.00]
+
+    DENOM_COLORS = {
+        '$0.01': '#6B7280', '$0.05': '#8B5CF6', '$0.25': '#3B82F6',
+        '$1.00': '#10B981', '$5.00': '#F59E0B', '$10.00': '#EF4444',
+        '$20.00': '#EC4899', '$50.00': '#F97316', '$100.00': '#FFD700'
+    }
+
+    port_profiles = run_query(f"SELECT DISTINCT SHIP_NAME, DEPARTURE_PORT FROM {DB}.{SCHEMA}.SHIP_PORT_PROFILES ORDER BY SHIP_NAME, DEPARTURE_PORT")
+    bank_ships_list = sorted(port_profiles['SHIP_NAME'].unique().tolist())
+
+    with st.container(border=True):
+        bc1, bc2 = st.columns(2)
+        with bc1:
+            bank_ship = st.selectbox("Ship", bank_ships_list, key="bank_ship")
+        with bc2:
+            ship_ports = port_profiles[port_profiles['SHIP_NAME'] == bank_ship]['DEPARTURE_PORT'].tolist()
+            bank_port = st.selectbox("Departure Port", ship_ports, key="bank_port")
+
+        bc3, bc4, bc5 = st.columns(3)
+        with bc3:
+            bank_duration = st.slider("Voyage duration (days)", 3, 10, 5, key="bank_duration")
+        with bc4:
+            bank_age = st.slider("Avg passenger age", 21, 75, 45, key="bank_age")
+        with bc5:
+            bank_profile = st.selectbox("Passenger profile", ["Auto-detect from port", "Spring Break / Young", "Family Cruise", "Balanced Mix", "Premium / Older", "High Rollers"], key="bank_profile")
+
+        st.markdown("")
+        bank_predict_btn = st.button("Optimize Casino Floor", type="primary", key="bank_predict")
+
+    if bank_predict_btn:
+        try:
+            port_data = run_query(f"""
+                SELECT * FROM {DB}.{SCHEMA}.SHIP_PORT_PROFILES
+                WHERE SHIP_NAME = '{bank_ship}' AND DEPARTURE_PORT = '{bank_port}'
+                ORDER BY ABS(TYPICAL_DURATION - {bank_duration})
+                LIMIT 1
+            """)
+            if len(port_data) == 0:
+                port_data = run_query(f"""
+                    SELECT * FROM {DB}.{SCHEMA}.SHIP_PORT_PROFILES
+                    WHERE SHIP_NAME = '{bank_ship}'
+                    LIMIT 1
+                """)
+
+            port_row = port_data.iloc[0]
+            denom_shift = float(port_row['DENOMINATION_SHIFT'])
+            profile_type = str(port_row['PORT_PROFILE'])
+
+            if bank_profile == "Spring Break / Young":
+                denom_shift = -0.35
+                profile_type = "budget"
+            elif bank_profile == "Family Cruise":
+                denom_shift = -0.15
+                profile_type = "family"
+            elif bank_profile == "Premium / Older":
+                denom_shift = 0.25
+                profile_type = "premium"
+            elif bank_profile == "High Rollers":
+                denom_shift = 0.35
+                profile_type = "high-roller"
+            elif bank_profile == "Balanced Mix":
+                denom_shift = 0.0
+                profile_type = "balanced"
+
+            age_shift = (bank_age - 45) / 100.0
+            duration_shift = (bank_duration - 5) * 0.03
+            total_shift = denom_shift + age_shift + duration_shift
+            total_shift = max(-0.5, min(0.5, total_shift))
+
+            demand = run_query(f"""
+                SELECT DENOMINATION, DEMAND_PCT
+                FROM {DB}.{SCHEMA}.SHIP_BANK_DEMAND
+                WHERE SHIP_NAME = '{bank_ship}'
+                ORDER BY DENOMINATION
+            """)
+
+            base_pcts = demand['DEMAND_PCT'].values.astype(float)
+            denoms = demand['DENOMINATION'].values.astype(float)
+
+            weights = np.array([float(i) for i in range(len(denoms))])
+            weights = weights / weights.max()
+            shift_factors = 1.0 + total_shift * (2.0 * weights - 1.0)
+            shift_factors = np.clip(shift_factors, 0.3, 3.0)
+            adjusted_pcts = base_pcts * shift_factors
+            adjusted_pcts = adjusted_pcts / adjusted_pcts.sum() * 100
+
+            BANK_ZONES = {
+                'A': {'label': 'Entrance Zone', 'machines': 16, 'x': 60, 'y': 50, 'w': 200, 'h': 100},
+                'B': {'label': 'Bar Area', 'machines': 20, 'x': 300, 'y': 50, 'w': 200, 'h': 100},
+                'C': {'label': 'Center Floor', 'machines': 32, 'x': 60, 'y': 190, 'w': 200, 'h': 120},
+                'D': {'label': 'VIP Lounge', 'machines': 12, 'x': 300, 'y': 190, 'w': 200, 'h': 120},
+                'E': {'label': 'High Limit Room', 'machines': 8, 'x': 540, 'y': 50, 'w': 160, 'h': 100},
+                'F': {'label': 'Poolside', 'machines': 24, 'x': 540, 'y': 190, 'w': 160, 'h': 120},
+                'G': {'label': 'Promenade', 'machines': 20, 'x': 60, 'y': 350, 'w': 300, 'h': 80},
+                'H': {'label': 'Aft Lounge', 'machines': 16, 'x': 400, 'y': 350, 'w': 300, 'h': 80},
+            }
+
+            zone_allocations = {}
+            for zone_id, zone in BANK_ZONES.items():
+                z_size = zone['machines']
+                if zone_id == 'E':
+                    vip_pcts = adjusted_pcts.copy()
+                    vip_pcts[:5] *= 0.1
+                    vip_pcts[5:] *= 2.5
+                    vip_pcts = vip_pcts / vip_pcts.sum() * 100
+                    z_pcts = vip_pcts
+                elif zone_id == 'A':
+                    entry_pcts = adjusted_pcts.copy()
+                    entry_pcts[2:6] *= 1.5
+                    entry_pcts = entry_pcts / entry_pcts.sum() * 100
+                    z_pcts = entry_pcts
+                elif zone_id == 'F':
+                    casual_pcts = adjusted_pcts.copy()
+                    casual_pcts[:4] *= 1.8
+                    casual_pcts[6:] *= 0.3
+                    casual_pcts = casual_pcts / casual_pcts.sum() * 100
+                    z_pcts = casual_pcts
+                elif zone_id == 'D':
+                    vip_pcts = adjusted_pcts.copy()
+                    vip_pcts[:3] *= 0.3
+                    vip_pcts[4:] *= 1.8
+                    vip_pcts = vip_pcts / vip_pcts.sum() * 100
+                    z_pcts = vip_pcts
+                else:
+                    z_pcts = adjusted_pcts
+
+                raw_alloc = z_pcts * z_size / 100.0
+                allocated = np.floor(raw_alloc).astype(int)
+                remainder = raw_alloc - allocated
+                shortfall = z_size - allocated.sum()
+                if shortfall > 0:
+                    indices = np.argsort(-remainder)
+                    for idx in range(int(min(shortfall, len(indices)))):
+                        allocated[indices[idx]] += 1
+
+                top_idx = np.argmax(allocated)
+                top_denom = BANK_DENOM_LABELS[top_idx]
+                zone_allocations[zone_id] = {
+                    'pcts': z_pcts.tolist(),
+                    'allocated': allocated.tolist(),
+                    'top_denom': top_denom,
+                    'top_color': DENOM_COLORS[top_denom],
+                    'machines': z_size
+                }
+
+            st.session_state['bank_result'] = {
+                'ship': bank_ship, 'port': bank_port,
+                'duration': bank_duration, 'age': bank_age,
+                'profile': profile_type, 'shift': total_shift,
+                'overall_pcts': adjusted_pcts.tolist(),
+                'zones': zone_allocations,
+                'zone_defs': {k: {kk: vv for kk, vv in v.items() if kk != 'machines'} for k, v in BANK_ZONES.items()},
+                'zone_machines': {k: v['machines'] for k, v in BANK_ZONES.items()},
+                'zone_labels': {k: v['label'] for k, v in BANK_ZONES.items()},
+            }
+        except Exception as e:
+            st.error(f"Casino floor optimization failed: {e}")
+
+    if 'bank_result' in st.session_state:
+        br = st.session_state['bank_result']
+        zones = br['zones']
+        total_machines = sum(z['machines'] for z in zones.values())
+
+        profile_emoji = {'budget': '🎒', 'party': '🎉', 'family': '👨‍👩‍👧‍👦', 'balanced': '⚖️', 'premium': '💎', 'high-roller': '🃏'}.get(br['profile'], '🎰')
+        shift_desc = "Higher denominations" if br['shift'] > 0.05 else ("Lower denominations" if br['shift'] < -0.05 else "Balanced mix")
+
+        st.markdown(f'''
+        <div class="prediction-result">
+            <p style="color:rgba(255,255,255,0.7);font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;margin:0;">
+                Casino Floor Optimization — {br['ship']}
+            </p>
+            <p style="color:{CARNIVAL_GOLD};font-size:1.4rem;font-weight:700;margin:4px 0 0 0;">
+                {total_machines} Machines · {br['port']} · {br['duration']}-day voyage
+            </p>
+            <p style="color:rgba(255,255,255,0.5);font-size:0.85rem;margin:4px 0 0 0;">
+                {profile_emoji} {br['profile'].title()} profile · Avg age {br['age']} · {shift_desc}
+            </p>
+        </div>
+        ''', unsafe_allow_html=True)
+
+        BANK_ZONES_RENDER = {
+            'A': {'label': 'Entrance Zone', 'x': 60, 'y': 50, 'w': 200, 'h': 100},
+            'B': {'label': 'Bar Area', 'x': 300, 'y': 50, 'w': 200, 'h': 100},
+            'C': {'label': 'Center Floor', 'x': 60, 'y': 190, 'w': 200, 'h': 120},
+            'D': {'label': 'VIP Lounge', 'x': 300, 'y': 190, 'w': 200, 'h': 120},
+            'E': {'label': 'High Limit Room', 'x': 540, 'y': 50, 'w': 160, 'h': 100},
+            'F': {'label': 'Poolside', 'x': 540, 'y': 190, 'w': 160, 'h': 120},
+            'G': {'label': 'Promenade', 'x': 60, 'y': 350, 'w': 300, 'h': 80},
+            'H': {'label': 'Aft Lounge', 'x': 400, 'y': 350, 'w': 300, 'h': 80},
+        }
+
+        zone_rects = ""
+        for zid, zdef in BANK_ZONES_RENDER.items():
+            za = zones[zid]
+            c = za['top_color']
+            x, y, w, h = zdef['x'], zdef['y'], zdef['w'], zdef['h']
+            zone_rects += f'''
+                <rect x="{x}" y="{y}" width="{w}" height="{h}" rx="10"
+                      fill="{c}" fill-opacity="0.25" stroke="{c}" stroke-width="2"/>
+                <text x="{x + w/2}" y="{y + 22}" text-anchor="middle"
+                      fill="white" font-size="13" font-weight="600" font-family="Inter, sans-serif">
+                    {zdef['label']}
+                </text>
+                <text x="{x + w/2}" y="{y + 42}" text-anchor="middle"
+                      fill="{CARNIVAL_GOLD}" font-size="16" font-weight="700" font-family="Inter, sans-serif">
+                    Bank {zid}: {za['top_denom']}
+                </text>
+                <text x="{x + w/2}" y="{y + 60}" text-anchor="middle"
+                      fill="rgba(255,255,255,0.6)" font-size="11" font-family="Inter, sans-serif">
+                    {za['machines']} machines
+                </text>
+            '''
+            cols = min(za['machines'], 8)
+            rows = (za['machines'] + cols - 1) // cols
+            mx_start = x + (w - cols * 16) / 2
+            my_start = y + 68
+            for mi in range(za['machines']):
+                mr = mi // cols
+                mc = mi % cols
+                if my_start + mr * 12 + 8 < y + h:
+                    zone_rects += f'<rect x="{mx_start + mc * 16}" y="{my_start + mr * 12}" width="12" height="8" rx="2" fill="{c}" fill-opacity="0.6"/>'
+
+        import streamlit.components.v1 as components
+        floor_html = f'''
+        <div style="background:linear-gradient(135deg, #0a1628, #122240);border-radius:14px;padding:20px;border:1px solid rgba(1,78,143,0.2);overflow-x:auto;">
+            <svg viewBox="0 0 760 460" xmlns="http://www.w3.org/2000/svg" style="width:100%;max-width:760px;margin:0 auto;display:block;">
+                <defs>
+                    <pattern id="grid" width="20" height="20" patternUnits="userSpaceOnUse">
+                        <path d="M 20 0 L 0 0 0 20" fill="none" stroke="rgba(255,255,255,0.03)" stroke-width="0.5"/>
+                    </pattern>
+                </defs>
+                <rect width="760" height="460" fill="url(#grid)" rx="12"/>
+                <text x="380" y="28" text-anchor="middle" fill="rgba(255,255,255,0.3)" font-size="11"
+                      font-family="Inter, sans-serif" letter-spacing="0.15em">
+                    &#9650; BOW &#8212; CASINO DECK LAYOUT &#8212; STERN &#9660;
+                </text>
+                {zone_rects}
+            </svg>
+        </div>
+        '''
+        components.html(floor_html, height=500, scrolling=False)
+
+        st.markdown("")
+        st.markdown("**Select a zone to view full allocation breakdown:**")
+        zone_options = [f"Bank {zid}: {BANK_ZONES_RENDER[zid]['label']} ({zones[zid]['machines']} machines)" for zid in BANK_ZONES_RENDER]
+        selected_zone_label = st.selectbox("Zone", zone_options, key="zone_select")
+        selected_zone_id = selected_zone_label.split(":")[0].replace("Bank ", "").strip()
+        sz = zones[selected_zone_id]
+
+        alloc_data = pd.DataFrame({
+            'Denomination': BANK_DENOM_LABELS,
+            'Machines': sz['allocated'],
+            'Demand %': [round(p, 1) for p in sz['pcts']]
+        })
+        alloc_data = alloc_data[alloc_data['Machines'] > 0]
+
+        col_chart, col_table = st.columns([3, 1])
+
+        with col_chart:
+            bars = alt.Chart(alloc_data).mark_bar(
+                cornerRadiusTopLeft=6, cornerRadiusTopRight=6
+            ).encode(
+                x=alt.X('Denomination:N', sort=BANK_DENOM_LABELS, title='Denomination'),
+                y=alt.Y('Machines:Q', title='Machines Allocated', axis=alt.Axis(tickMinStep=1)),
+                color=alt.Color('Denomination:N', scale=alt.Scale(
+                    domain=list(DENOM_COLORS.keys()), range=list(DENOM_COLORS.values())
+                ), legend=None),
+                tooltip=[
+                    alt.Tooltip('Denomination:N'),
+                    alt.Tooltip('Machines:Q', title='Machines'),
+                    alt.Tooltip('Demand %:Q', format='.1f')
+                ]
+            ).properties(height=300)
+            labels = alt.Chart(alloc_data).mark_text(
+                dy=-10, color='white', fontSize=13, fontWeight='bold'
+            ).encode(
+                x=alt.X('Denomination:N', sort=BANK_DENOM_LABELS),
+                y=alt.Y('Machines:Q'),
+                text='Machines:Q'
+            )
+            chart = themed_chart(bars + labels)
+            st.altair_chart(chart, use_container_width=True)
+
+        with col_table:
+            st.markdown(f"**{BANK_ZONES_RENDER[selected_zone_id]['label']}**")
+            for _, row in alloc_data.iterrows():
+                dcolor = DENOM_COLORS.get(row['Denomination'], CARNIVAL_BLUE)
+                st.markdown(f'''
+                <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;
+                            border-bottom:1px solid rgba(255,255,255,0.08);">
+                    <span style="font-weight:500;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:{dcolor};margin-right:6px;"></span>{row['Denomination']}</span>
+                    <span class="stat-pill">{int(row['Machines'])}</span>
+                </div>
+                ''', unsafe_allow_html=True)
+            st.markdown(f'''
+            <div style="display:flex;justify-content:space-between;padding:10px;
+                        background:rgba(245,158,11,0.1);border-radius:8px;margin-top:8px;">
+                <span style="font-weight:700;">Total</span>
+                <span style="font-weight:700;color:{CARNIVAL_GOLD};">{int(alloc_data['Machines'].sum())}</span>
+            </div>
+            ''', unsafe_allow_html=True)
+
+        st.markdown("")
+        overall_data = pd.DataFrame({
+            'Denomination': BANK_DENOM_LABELS,
+            'Adjusted Demand %': [round(p, 1) for p in br['overall_pcts']]
+        })
+        overall_data = overall_data[overall_data['Adjusted Demand %'] > 0.5]
+        bars = alt.Chart(overall_data).mark_bar(
+            cornerRadiusTopLeft=6, cornerRadiusTopRight=6
+        ).encode(
+            x=alt.X('Denomination:N', sort=BANK_DENOM_LABELS, title='Denomination'),
+            y=alt.Y('Adjusted Demand %:Q', title='Ship-wide Demand (%)'),
+            color=alt.Color('Denomination:N', scale=alt.Scale(
+                domain=list(DENOM_COLORS.keys()), range=list(DENOM_COLORS.values())
+            ), legend=None),
+        ).properties(height=250, title='Ship-wide Denomination Demand (Adjusted for Voyage Profile)')
+        chart = themed_chart(bars)
+        st.altair_chart(chart, use_container_width=True)
+
+    st.divider()
+    st.markdown('##### 🎛️ Interactive Denomination Predictor')
+    st.caption("Set patron attributes manually to predict optimal slot denomination via the SLOT_DENOMINATION_MODEL (RandomForest).")
+
+    SHIP_NAMES = ['Carnival Breeze', 'Carnival Celebration', 'Carnival Horizon', 'Carnival Jubilee', 'Carnival Magic', 'Carnival Panorama', 'Carnival Vista', 'Mardi Gras']
+    GAME_TYPES = ['Classic Slots', 'Bonus Slots', 'Progressive Slots', 'Video Poker']
+    GENDERS = ['Female', 'Male']
+    TIERS = ['Basic', 'Bronze', 'Gold', 'Platinum', 'Silver']
+    RISK_LEVELS = ['Conservative', 'Moderate', 'High']
+    INCOME_BRACKETS = ['Under $50K', '$50K-$75K', '$75K-$100K', '$100K-$150K', 'Over $150K']
+    SHIP_MAP = {s: i for i, s in enumerate(SHIP_NAMES)}
+    GAME_MAP = {g: i for i, g in enumerate(GAME_TYPES)}
+    GENDER_MAP = {'Female': 0, 'Male': 1}
+    TIER_MAP = {t: i for i, t in enumerate(TIERS)}
+    RISK_MAP = {r: i for i, r in enumerate(RISK_LEVELS)}
+    INCOME_MAP = {b: i for i, b in enumerate(INCOME_BRACKETS)}
+    DENOM_CLASSES = {0: '$0.01', 1: '$0.05', 2: '$0.25', 3: '$1.00', 4: '$5.00', 5: '$10.00', 6: '$20.00', 7: '$50.00', 8: '$100.00'}
+
+    with st.container(border=True):
+        ic1, ic2, ic3, ic4 = st.columns(4)
+        with ic1:
+            inp_ship = st.selectbox("Ship", SHIP_NAMES, key="pred_ship")
+            inp_game = st.selectbox("Game type", GAME_TYPES, key="pred_game")
+            inp_month = st.slider("Month", 1, 12, 6, key="pred_month")
+        with ic2:
+            inp_age = st.number_input("Age", 21, 85, 45, key="pred_age")
+            inp_gender = st.selectbox("Gender", GENDERS, key="pred_gender")
+            inp_dow = st.slider("Day of week (0=Mon)", 0, 6, 2, key="pred_dow")
+        with ic3:
+            inp_tier = st.selectbox("Membership tier", TIERS, key="pred_tier")
+            inp_cruises = st.number_input("Total cruises", 1, 50, 5, key="pred_cruises")
+            inp_weekend = st.checkbox("Weekend", key="pred_weekend")
+        with ic4:
+            inp_risk = st.selectbox("Risk appetite", RISK_LEVELS, key="pred_risk")
+            inp_income = st.selectbox("Income bracket", INCOME_BRACKETS, key="pred_income")
+
+    if st.button("Predict Denomination", type="primary", key="manual_predict"):
+        ship_enc = SHIP_MAP[inp_ship]
+        game_enc = GAME_MAP[inp_game]
+        gender_enc = GENDER_MAP[inp_gender]
+        tier_enc = TIER_MAP[inp_tier]
+        risk_enc = RISK_MAP[inp_risk]
+        income_enc = INCOME_MAP[inp_income]
+        weekend_val = 1 if inp_weekend else 0
+
+        predict_sql = f"""
+            SELECT MODEL(CARNIVAL_CASINO.SLOT_ANALYTICS.SLOT_DENOMINATION_MODEL, V1)!PREDICT(
+                {ship_enc}, {inp_month}, {inp_dow}, {weekend_val},
+                {game_enc}, {inp_age}, {gender_enc}, {tier_enc},
+                {inp_cruises}, {risk_enc}, {income_enc}
+            ):output_feature_0::INT AS PRED_CLASS
+        """
+        proba_sql = f"""
+            SELECT MODEL(CARNIVAL_CASINO.SLOT_ANALYTICS.SLOT_DENOMINATION_MODEL, V1)!PREDICT_PROBA(
+                {ship_enc}, {inp_month}, {inp_dow}, {weekend_val},
+                {game_enc}, {inp_age}, {gender_enc}, {tier_enc},
+                {inp_cruises}, {risk_enc}, {income_enc}
+            ) AS PROBS
+        """
+        with st.spinner("Running model inference..."):
+            try:
+                session = _get_session()
+                pred_row = session.sql(predict_sql).collect()[0]
+                pred_class = int(pred_row['PRED_CLASS'])
+                denom_label = DENOM_CLASSES.get(pred_class, 'Unknown')
+
+                st.markdown(f'''
+                <div class="prediction-result">
+                    <p class="prediction-label">Recommended Denomination</p>
+                    <p class="prediction-value">{denom_label}</p>
+                </div>
+                ''', unsafe_allow_html=True)
+                st.markdown("")
+
+                proba_row = session.sql(proba_sql).collect()[0]
+                probs_obj = proba_row['PROBS']
+                if isinstance(probs_obj, str):
+                    probs_obj = json.loads(probs_obj)
+                prob_data = pd.DataFrame({
+                    'Denomination': list(DENOM_CLASSES.values()),
+                    'Probability': [float(probs_obj.get(f'output_feature_{i}', 0)) for i in range(9)]
+                })
+                bars = alt.Chart(prob_data).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
+                    x=alt.X('Denomination:N', sort=None, title='Denomination'),
+                    y=alt.Y('Probability:Q', title='Probability', axis=alt.Axis(format='.0%')),
+                    color=alt.condition(
+                        alt.datum.Denomination == denom_label,
+                        alt.value(CARNIVAL_GOLD),
+                        alt.value(CARNIVAL_BLUE)
+                    ),
+                    tooltip=[
+                        alt.Tooltip('Denomination:N'),
+                        alt.Tooltip('Probability:Q', format='.2%')
+                    ]
+                ).properties(height=300)
+                rule = alt.Chart(prob_data).mark_rule(color=CARNIVAL_RED, strokeWidth=1.5, strokeDash=[4,4]).encode(
+                    y=alt.Y('mean(Probability):Q')
+                )
+                chart = themed_chart(bars + rule)
+                st.altair_chart(chart, use_container_width=True)
+            except Exception as e:
+                st.error(f"Prediction failed: {e}")
+
+
+    st.divider()
     st.markdown('##### 📊 Model Performance Summary')
 
     eval_summary = run_query(f"SELECT * FROM {DB}.{SCHEMA}.MODEL_EVALUATION_SUMMARY")
@@ -773,223 +1203,209 @@ with tab3:
             """)
             st.dataframe(profile, hide_index=True, use_container_width=True)
 
-    st.markdown('##### 🎛️ Interactive Denomination Predictor')
-    st.caption("Set patron attributes manually to predict optimal slot denomination via the SLOT_DENOMINATION_MODEL (RandomForest).")
-
-    SHIP_NAMES = ['Carnival Breeze', 'Carnival Celebration', 'Carnival Horizon', 'Carnival Jubilee', 'Carnival Magic', 'Carnival Panorama', 'Carnival Vista', 'Mardi Gras']
-    GAME_TYPES = ['Classic Slots', 'Bonus Slots', 'Progressive Slots', 'Video Poker']
-    GENDERS = ['Female', 'Male']
-    TIERS = ['Basic', 'Bronze', 'Gold', 'Platinum', 'Silver']
-    RISK_LEVELS = ['Conservative', 'Moderate', 'High']
-    INCOME_BRACKETS = ['Under $50K', '$50K-$75K', '$75K-$100K', '$100K-$150K', 'Over $150K']
-    SHIP_MAP = {s: i for i, s in enumerate(SHIP_NAMES)}
-    GAME_MAP = {g: i for i, g in enumerate(GAME_TYPES)}
-    GENDER_MAP = {'Female': 0, 'Male': 1}
-    TIER_MAP = {t: i for i, t in enumerate(TIERS)}
-    RISK_MAP = {r: i for i, r in enumerate(RISK_LEVELS)}
-    INCOME_MAP = {b: i for i, b in enumerate(INCOME_BRACKETS)}
-    DENOM_CLASSES = {0: '$0.01', 1: '$0.05', 2: '$0.25', 3: '$1.00', 4: '$5.00', 5: '$10.00', 6: '$20.00', 7: '$50.00', 8: '$100.00'}
-
-    with st.container(border=True):
-        ic1, ic2, ic3, ic4 = st.columns(4)
-        with ic1:
-            inp_ship = st.selectbox("Ship", SHIP_NAMES, key="pred_ship")
-            inp_game = st.selectbox("Game type", GAME_TYPES, key="pred_game")
-            inp_month = st.slider("Month", 1, 12, 6, key="pred_month")
-        with ic2:
-            inp_age = st.number_input("Age", 21, 85, 45, key="pred_age")
-            inp_gender = st.selectbox("Gender", GENDERS, key="pred_gender")
-            inp_dow = st.slider("Day of week (0=Mon)", 0, 6, 2, key="pred_dow")
-        with ic3:
-            inp_tier = st.selectbox("Membership tier", TIERS, key="pred_tier")
-            inp_cruises = st.number_input("Total cruises", 1, 50, 5, key="pred_cruises")
-            inp_weekend = st.checkbox("Weekend", key="pred_weekend")
-        with ic4:
-            inp_risk = st.selectbox("Risk appetite", RISK_LEVELS, key="pred_risk")
-            inp_income = st.selectbox("Income bracket", INCOME_BRACKETS, key="pred_income")
-
-    if st.button("Predict Denomination", type="primary", key="manual_predict"):
-        ship_enc = SHIP_MAP[inp_ship]
-        game_enc = GAME_MAP[inp_game]
-        gender_enc = GENDER_MAP[inp_gender]
-        tier_enc = TIER_MAP[inp_tier]
-        risk_enc = RISK_MAP[inp_risk]
-        income_enc = INCOME_MAP[inp_income]
-        weekend_val = 1 if inp_weekend else 0
-
-        predict_sql = f"""
-            SELECT MODEL(CARNIVAL_CASINO.SLOT_ANALYTICS.SLOT_DENOMINATION_MODEL, V1)!PREDICT(
-                {ship_enc}, {inp_month}, {inp_dow}, {weekend_val},
-                {game_enc}, {inp_age}, {gender_enc}, {tier_enc},
-                {inp_cruises}, {risk_enc}, {income_enc}
-            ):output_feature_0::INT AS PRED_CLASS
-        """
-        proba_sql = f"""
-            SELECT MODEL(CARNIVAL_CASINO.SLOT_ANALYTICS.SLOT_DENOMINATION_MODEL, V1)!PREDICT_PROBA(
-                {ship_enc}, {inp_month}, {inp_dow}, {weekend_val},
-                {game_enc}, {inp_age}, {gender_enc}, {tier_enc},
-                {inp_cruises}, {risk_enc}, {income_enc}
-            ) AS PROBS
-        """
-        with st.spinner("Running model inference..."):
-            try:
-                session = _get_session()
-                pred_row = session.sql(predict_sql).collect()[0]
-                pred_class = int(pred_row['PRED_CLASS'])
-                denom_label = DENOM_CLASSES.get(pred_class, 'Unknown')
-
-                st.markdown(f'''
-                <div class="prediction-result">
-                    <p class="prediction-label">Recommended Denomination</p>
-                    <p class="prediction-value">{denom_label}</p>
-                </div>
-                ''', unsafe_allow_html=True)
-                st.markdown("")
-
-                proba_row = session.sql(proba_sql).collect()[0]
-                probs_obj = proba_row['PROBS']
-                if isinstance(probs_obj, str):
-                    probs_obj = json.loads(probs_obj)
-                prob_data = pd.DataFrame({
-                    'Denomination': list(DENOM_CLASSES.values()),
-                    'Probability': [float(probs_obj.get(f'output_feature_{i}', 0)) for i in range(9)]
-                })
-                bars = alt.Chart(prob_data).mark_bar(cornerRadiusTopLeft=5, cornerRadiusTopRight=5).encode(
-                    x=alt.X('Denomination:N', sort=None, title='Denomination'),
-                    y=alt.Y('Probability:Q', title='Probability', axis=alt.Axis(format='.0%')),
-                    color=alt.condition(
-                        alt.datum.Denomination == denom_label,
-                        alt.value(CARNIVAL_GOLD),
-                        alt.value(CARNIVAL_BLUE)
-                    ),
-                    tooltip=[
-                        alt.Tooltip('Denomination:N'),
-                        alt.Tooltip('Probability:Q', format='.2%')
-                    ]
-                ).properties(height=300)
-                rule = alt.Chart(prob_data).mark_rule(color=CARNIVAL_RED, strokeWidth=1.5, strokeDash=[4,4]).encode(
-                    y=alt.Y('mean(Probability):Q')
-                )
-                chart = themed_chart(bars + rule)
-                st.altair_chart(chart, use_container_width=True)
-            except Exception as e:
-                st.error(f"Prediction failed: {e}")
-
     st.divider()
-    st.markdown('##### 🎰 Bank Denomination Allocator')
-    st.caption("Predict optimal denomination mix for a bank of wired machines on a specific ship, based on historical play patterns and passenger demographics.")
+    st.markdown('##### 🚢 Voyage Profit Predictor')
+    st.caption("Predict total casino slot profit for a ship voyage based on departure date, voyage duration, and expected passenger demographics.")
 
-    BANK_SHIPS = run_query(f"SELECT DISTINCT SHIP_NAME FROM {DB}.{SCHEMA}.SHIP_BANK_DEMAND ORDER BY SHIP_NAME")
-    BANK_DENOM_LABELS = ['$0.01', '$0.05', '$0.25', '$1.00', '$5.00', '$10.00', '$20.00', '$50.00', '$100.00']
+    VOYAGE_SHIPS = run_query(f"SELECT DISTINCT SHIP_NAME FROM {DB}.{SCHEMA}.VOYAGE_PROFIT_TRAINING ORDER BY SHIP_NAME")
 
     with st.container(border=True):
-        bc1, bc2, bc3 = st.columns([2, 1, 1])
-        with bc1:
-            bank_ship = st.selectbox("Ship", BANK_SHIPS['SHIP_NAME'].tolist(), key="bank_ship")
-        with bc2:
-            bank_size = st.number_input("Machines in bank", min_value=4, max_value=100, value=24, step=2, key="bank_size")
-        with bc3:
-            st.markdown("<br>", unsafe_allow_html=True)
-            bank_predict_btn = st.button("Allocate Bank", type="primary", key="bank_predict")
+        vc1, vc2, vc3 = st.columns([2, 1, 1])
+        with vc1:
+            voyage_ship = st.selectbox("Ship", VOYAGE_SHIPS['SHIP_NAME'].tolist(), key="voyage_ship")
+        with vc2:
+            import datetime
+            voyage_date = st.date_input("Departure date", value=datetime.date(2026, 4, 1), key="voyage_date")
+        with vc3:
+            voyage_duration = st.slider("Days at sea", 3, 7, 5, key="voyage_duration")
 
-    if bank_predict_btn:
+        st.markdown("**Expected Passenger Profile**")
+        vp1, vp2, vp3, vp4 = st.columns(4)
+        with vp1:
+            vp_avg_age = st.slider("Avg passenger age", 25, 75, 50, key="vp_avg_age")
+        with vp2:
+            vp_high_tier = st.slider("% High-tier members", 0, 100, 25, key="vp_high_tier")
+        with vp3:
+            vp_high_risk = st.slider("% High-risk appetite", 0, 100, 30, key="vp_high_risk")
+        with vp4:
+            vp_high_income = st.slider("% High-income ($100K+)", 0, 100, 20, key="vp_high_income")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        voyage_predict_btn = st.button("Predict Voyage Profit", type="primary", key="voyage_predict")
+
+    if voyage_predict_btn:
         try:
-            demand = run_query(f"""
-                SELECT DENOMINATION, DEMAND_PCT
-                FROM {DB}.{SCHEMA}.SHIP_BANK_DEMAND
-                WHERE SHIP_NAME = '{bank_ship}'
-                ORDER BY DENOMINATION
-            """)
+            dep_month = voyage_date.month
+            dep_dow = voyage_date.weekday()
+            pct_ht = vp_high_tier / 100.0
+            pct_hr = vp_high_risk / 100.0
+            pct_hi = vp_high_income / 100.0
 
-            pcts = demand['DEMAND_PCT'].values.astype(float)
-            pcts = np.clip(pcts, 0, 100)
-            pcts = pcts / pcts.sum() * 100
+            voyage_sql = f"""
+                SELECT
+                    AVG(TOTAL_PROFIT) AS AVG_PROFIT,
+                    AVG(TOTAL_WAGERED) AS AVG_WAGERED,
+                    AVG(TOTAL_WON) AS AVG_WON,
+                    AVG(TOTAL_PROFIT / VOYAGE_DURATION) AS AVG_DAILY_PROFIT,
+                    COUNT(*) AS MATCH_COUNT
+                FROM {DB}.{SCHEMA}.VOYAGE_PROFIT_TRAINING
+                WHERE SHIP_NAME = '{voyage_ship}'
+                  AND VOYAGE_DURATION = {voyage_duration}
+                  AND DEPARTURE_MONTH = {dep_month}
+            """
+            base_result = run_query(voyage_sql)
 
-            raw_alloc = pcts * bank_size / 100.0
-            allocated = np.floor(raw_alloc).astype(int)
-            remainder = raw_alloc - allocated
-            shortfall = bank_size - allocated.sum()
-            if shortfall > 0:
-                indices = np.argsort(-remainder)
-                for idx in range(int(shortfall)):
-                    allocated[indices[idx]] += 1
+            if base_result['MATCH_COUNT'].iloc[0] == 0:
+                voyage_sql_fallback = f"""
+                    SELECT
+                        AVG(TOTAL_PROFIT) AS AVG_PROFIT,
+                        AVG(TOTAL_WAGERED) AS AVG_WAGERED,
+                        AVG(TOTAL_WON) AS AVG_WON,
+                        AVG(TOTAL_PROFIT / VOYAGE_DURATION) AS AVG_DAILY_PROFIT,
+                        COUNT(*) AS MATCH_COUNT
+                    FROM {DB}.{SCHEMA}.VOYAGE_PROFIT_TRAINING
+                    WHERE SHIP_NAME = '{voyage_ship}'
+                      AND VOYAGE_DURATION = {voyage_duration}
+                """
+                base_result = run_query(voyage_sql_fallback)
 
-            st.session_state['bank_result'] = {
-                'ship': bank_ship, 'bank_size': bank_size,
-                'pcts': pcts.tolist(), 'allocated': allocated.tolist()
+            base_profit = float(base_result['AVG_PROFIT'].iloc[0])
+            base_wagered = float(base_result['AVG_WAGERED'].iloc[0])
+            base_won = float(base_result['AVG_WON'].iloc[0])
+            base_daily = float(base_result['AVG_DAILY_PROFIT'].iloc[0])
+
+            demo_sql = f"""
+                SELECT
+                    AVG(PCT_HIGH_TIER) AS HIST_HT,
+                    AVG(PCT_HIGH_RISK) AS HIST_HR,
+                    AVG(PCT_HIGH_INCOME) AS HIST_HI,
+                    AVG(AVG_PASSENGER_AGE) AS HIST_AGE
+                FROM {DB}.{SCHEMA}.VOYAGE_PROFIT_TRAINING
+                WHERE SHIP_NAME = '{voyage_ship}'
+                  AND VOYAGE_DURATION = {voyage_duration}
+            """
+            demo_result = run_query(demo_sql)
+            hist_ht = float(demo_result['HIST_HT'].iloc[0])
+            hist_hr = float(demo_result['HIST_HR'].iloc[0])
+            hist_hi = float(demo_result['HIST_HI'].iloc[0])
+            hist_age = float(demo_result['HIST_AGE'].iloc[0])
+
+            demo_factor = 1.0
+            if hist_ht > 0:
+                demo_factor *= (1.0 + 0.3 * (pct_ht - hist_ht) / max(hist_ht, 0.01))
+            if hist_hr > 0:
+                demo_factor *= (1.0 + 0.2 * (pct_hr - hist_hr) / max(hist_hr, 0.01))
+            if hist_hi > 0:
+                demo_factor *= (1.0 + 0.25 * (pct_hi - hist_hi) / max(hist_hi, 0.01))
+            if hist_age > 0:
+                demo_factor *= (1.0 + 0.1 * (vp_avg_age - hist_age) / hist_age)
+
+            demo_factor = max(0.5, min(2.0, demo_factor))
+
+            pred_profit = base_profit * demo_factor
+            pred_wagered = base_wagered * demo_factor
+            pred_won = base_won * demo_factor
+            pred_daily = base_daily * demo_factor
+            margin_pct = (pred_profit / pred_wagered * 100) if pred_wagered > 0 else 0
+
+            st.session_state['voyage_result'] = {
+                'ship': voyage_ship, 'duration': voyage_duration,
+                'date': str(voyage_date), 'profit': pred_profit,
+                'wagered': pred_wagered, 'won': pred_won,
+                'daily': pred_daily, 'margin': margin_pct,
+                'demo_factor': demo_factor
             }
         except Exception as e:
-            st.error(f"Bank allocation failed: {e}")
+            st.error(f"Voyage prediction failed: {e}")
 
-    if 'bank_result' in st.session_state:
-        br = st.session_state['bank_result']
-        pcts = np.array(br['pcts'])
-        allocated = np.array(br['allocated'])
+    if 'voyage_result' in st.session_state:
+        vr = st.session_state['voyage_result']
 
         st.markdown(f'''
         <div class="prediction-result">
             <p style="color:rgba(255,255,255,0.7);font-size:0.85rem;text-transform:uppercase;letter-spacing:0.1em;margin:0;">
-                Bank Allocation — {br['ship']}
+                Predicted Casino Profit — {vr['ship']}
             </p>
-            <p style="color:{CARNIVAL_GOLD};font-size:1.4rem;font-weight:700;margin:4px 0 0 0;">
-                {br['bank_size']} Machines Configured
+            <p style="color:{CARNIVAL_GOLD};font-size:2rem;font-weight:700;margin:4px 0 0 0;">
+                ${vr['profit']:,.0f}
+            </p>
+            <p style="color:rgba(255,255,255,0.5);font-size:0.8rem;margin:4px 0 0 0;">
+                {vr['duration']}-day voyage departing {vr['date']}
             </p>
         </div>
         ''', unsafe_allow_html=True)
 
-        alloc_data = pd.DataFrame({
-            'Denomination': BANK_DENOM_LABELS,
-            'Machines': allocated,
-            'Demand %': [round(p, 1) for p in pcts]
+        vm1, vm2, vm3, vm4 = st.columns(4)
+        vm1.metric("Total Wagered", f"${vr['wagered']:,.0f}")
+        vm2.metric("Total Payouts", f"${vr['won']:,.0f}")
+        vm3.metric("Profit Margin", f"{vr['margin']:.1f}%")
+        vm4.metric("Avg Daily Profit", f"${vr['daily']:,.0f}")
+
+        daily_data = pd.DataFrame({
+            'Day': [f"Day {i+1}" for i in range(vr['duration'])],
+            'Profit': [vr['daily'] * (0.85 + 0.3 * (i / max(vr['duration'] - 1, 1))) for i in range(vr['duration'])]
         })
-        alloc_data = alloc_data[alloc_data['Machines'] > 0]
 
-        col_chart, col_table = st.columns([3, 1])
+        bars = alt.Chart(daily_data).mark_bar(
+            cornerRadiusTopLeft=6, cornerRadiusTopRight=6
+        ).encode(
+            x=alt.X('Day:N', sort=None, title='Voyage Day'),
+            y=alt.Y('Profit:Q', title='Estimated Daily Profit ($)'),
+            color=alt.Color('Profit:Q', scale=alt.Scale(
+                range=[CARNIVAL_BLUE, CARNIVAL_GOLD]
+            ), legend=None),
+            tooltip=[
+                alt.Tooltip('Day:N'),
+                alt.Tooltip('Profit:Q', format='$,.0f', title='Est. Profit')
+            ]
+        ).properties(height=300)
 
-        with col_chart:
-            bars = alt.Chart(alloc_data).mark_bar(
-                cornerRadiusTopLeft=6, cornerRadiusTopRight=6
-            ).encode(
-                x=alt.X('Denomination:N', sort=BANK_DENOM_LABELS, title='Denomination'),
-                y=alt.Y('Machines:Q', title='Machines Allocated', axis=alt.Axis(tickMinStep=1)),
-                color=alt.Color('Demand %:Q', scale=alt.Scale(
-                    range=[CARNIVAL_BLUE, CARNIVAL_GOLD]
-                ), legend=alt.Legend(title='Demand %')),
-                tooltip=[
-                    alt.Tooltip('Denomination:N'),
-                    alt.Tooltip('Machines:Q', title='Machines'),
-                    alt.Tooltip('Demand %:Q', format='.1f')
-                ]
-            ).properties(height=350)
+        labels = alt.Chart(daily_data).mark_text(
+            dy=-10, color='white', fontSize=11, fontWeight='bold'
+        ).encode(
+            x=alt.X('Day:N', sort=None),
+            y=alt.Y('Profit:Q'),
+            text=alt.Text('Profit:Q', format='$,.0f')
+        )
 
-            labels = alt.Chart(alloc_data).mark_text(
-                dy=-10, color='white', fontSize=13, fontWeight='bold'
-            ).encode(
-                x=alt.X('Denomination:N', sort=BANK_DENOM_LABELS),
-                y=alt.Y('Machines:Q'),
-                text='Machines:Q'
-            )
+        chart = themed_chart(bars + labels)
+        st.altair_chart(chart, use_container_width=True)
 
-            chart = themed_chart(bars + labels)
-            st.altair_chart(chart, use_container_width=True)
+        ship_avg_sql = f"""
+            SELECT SHIP_NAME,
+                   AVG(TOTAL_PROFIT) AS AVG_PROFIT
+            FROM {DB}.{SCHEMA}.VOYAGE_PROFIT_TRAINING
+            WHERE VOYAGE_DURATION = {vr['duration']}
+            GROUP BY SHIP_NAME
+            ORDER BY SHIP_NAME
+        """
+        ship_avgs = run_query(ship_avg_sql)
+        ship_avgs['Type'] = 'Historical Avg'
+        pred_row = pd.DataFrame({
+            'SHIP_NAME': [vr['ship']],
+            'AVG_PROFIT': [vr['profit']],
+            'Type': ['This Voyage']
+        })
+        compare_data = pd.concat([ship_avgs, pred_row], ignore_index=True)
 
-        with col_table:
-            st.markdown("**Allocation Summary**")
-            for _, row in alloc_data.iterrows():
-                st.markdown(f'''
-                <div style="display:flex;justify-content:space-between;padding:6px 10px;
-                            border-bottom:1px solid rgba(255,255,255,0.08);">
-                    <span style="font-weight:500;">{row['Denomination']}</span>
-                    <span><span class="stat-pill">{int(row['Machines'])} machines</span></span>
-                </div>
-                ''', unsafe_allow_html=True)
-            st.markdown(f'''
-            <div style="display:flex;justify-content:space-between;padding:10px;
-                        background:rgba(245,158,11,0.1);border-radius:8px;margin-top:8px;">
-                <span style="font-weight:700;">Total</span>
-                <span style="font-weight:700;color:{CARNIVAL_GOLD};">{int(alloc_data['Machines'].sum())} machines</span>
-            </div>
-            ''', unsafe_allow_html=True)
+        compare_chart = alt.Chart(compare_data).mark_bar(
+            cornerRadiusTopLeft=4, cornerRadiusTopRight=4
+        ).encode(
+            x=alt.X('SHIP_NAME:N', title='Ship', sort=None),
+            y=alt.Y('AVG_PROFIT:Q', title='Profit ($)'),
+            color=alt.Color('Type:N', scale=alt.Scale(
+                domain=['Historical Avg', 'This Voyage'],
+                range=[CARNIVAL_BLUE, CARNIVAL_GOLD]
+            )),
+            xOffset='Type:N',
+            tooltip=[
+                alt.Tooltip('SHIP_NAME:N', title='Ship'),
+                alt.Tooltip('Type:N'),
+                alt.Tooltip('AVG_PROFIT:Q', format='$,.0f', title='Profit')
+            ]
+        ).properties(height=300)
+        chart = themed_chart(compare_chart)
+        st.altair_chart(chart, use_container_width=True)
 
 with tab4:
     st.markdown('##### 📋 Casino Policies & Information')

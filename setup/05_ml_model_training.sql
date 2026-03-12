@@ -216,6 +216,7 @@ SELECT * FROM MODEL_EVALUATION_SUMMARY;
 --   2. DENOMINATION_CLASSIFIER_REG (V1) — GradientBoosting denomination classifier
 --   3. BET_AMOUNT_CLASSIFIER_REG (V1) — GradientBoosting bet category classifier
 --   4. BANK_DENOMINATION_MODEL (V1) — MultiOutput GBR for ship denomination demand %
+--   5. VOYAGE_PROFIT_MODEL (V1) — GBR regressor for per-voyage casino profit prediction
 --
 -- Verify registration:
 SHOW MODELS IN SCHEMA CARNIVAL_CASINO.SLOT_ANALYTICS;

@@ -1,6 +1,6 @@
 # Carni Casino Slot Analytics
 
-An end-to-end casino slot machine analytics system built on Snowflake, featuring synthetic data generation, ship-specific denomination profiles, machine learning models, an interactive Streamlit dashboard with a bank allocation tool, semantic views for natural language queries, and a Cortex Agent for Snowflake Intelligence.
+An end-to-end casino slot machine analytics system built on Snowflake, featuring synthetic data generation, ship-specific denomination profiles, machine learning models, an interactive Streamlit dashboard with a casino floor optimizer and voyage profit predictor, semantic views for natural language queries, and a Cortex Agent for Snowflake Intelligence.
 
 ![Snowflake](https://img.shields.io/badge/Snowflake-29B5E8?style=flat&logo=snowflake&logoColor=white)
 ![Python](https://img.shields.io/badge/Python-3776AB?style=flat&logo=python&logoColor=white)
@@ -29,9 +29,10 @@ This project demonstrates a complete analytics solution for a cruise ship casino
 | Component | Description |
 |-----------|-------------|
 | **Synthetic Data** | 5,000 members + 100,000 slot play sessions with ship-specific denomination profiles |
-| **ML Models** | 4 Model Registry models + 3 built-in Snowflake ML classifiers |
-| **Bank Allocator** | Denomination mix optimizer for wired machine banks per ship |
-| **Streamlit Dashboard** | Interactive 4-tab analytics application with Carni branding |
+| **ML Models** | 5 Model Registry models + 3 built-in Snowflake ML classifiers |
+| **Casino Floor Optimizer** | SVG-based interactive casino deck layout with demographic-aware denomination allocation across 8 zones |
+| **Voyage Profit Predictor** | Per-voyage casino profit forecasting based on ship, duration, departure date, and passenger demographics |
+| **Streamlit Dashboard** | Interactive 4-tab analytics application with Carnival branding |
 | **Semantic View** | Natural language SQL via Cortex Analyst |
 | **Cortex Search** | RAG search over 15 casino policies |
 | **Cortex Agent** | Full-stack AI assistant for Snowflake Intelligence (5 tools) |
@@ -50,6 +51,8 @@ This project demonstrates a complete analytics solution for a cruise ship casino
 |  |  +-- MEMBER_DEMOGRAPHICS (5,000 members)                             |   |
 |  |  +-- SLOT_PLAY_HISTORY (100,000 sessions, ship-weighted denominations)|  |
 |  |  +-- SHIP_BANK_DEMAND (72 rows: 8 ships x 9 denominations)          |   |
+|  |  +-- SHIP_PORT_PROFILES (19 rows: ships x departure ports)           |   |
+|  |  +-- VOYAGE_PROFIT_TRAINING (28,920 rolling voyage records)          |   |
 |  |  +-- CASINO_POLICIES (15 documents)                                  |   |
 |  +----------------------------------------------------------------------+   |
 |                              |                                              |
@@ -73,6 +76,7 @@ This project demonstrates a complete analytics solution for a cruise ship casino
 |  |      +-- DENOMINATION_CLASSIFIER_REG (V1) - GradientBoosting         |   |
 |  |      +-- BET_AMOUNT_CLASSIFIER_REG (V1) - GradientBoosting           |   |
 |  |      +-- BANK_DENOMINATION_MODEL (V1) - MultiOutput GBR              |   |
+|  |      +-- VOYAGE_PROFIT_MODEL (V1) - GBR Regressor                    |   |
 |  +----------------------------------------------------------------------+   |
 |                              |                                              |
 |                              v                                              |
@@ -106,6 +110,8 @@ This project demonstrates a complete analytics solution for a cruise ship casino
 | `MEMBER_SLOT_FEATURES` | 5,000 | Aggregated behavioral features per member for ML |
 | `ML_TRAINING_DATA` | 5,000 | Encoded features with 70/15/15 train/val/test split |
 | `SHIP_DAILY_METRICS` | ~5,840 | Daily ship-level metrics for win rate classification |
+| `SHIP_PORT_PROFILES` | 19 | Ship-to-port mappings with passenger demographics and denomination shift factors (8 ships x 7 ports) |
+| `VOYAGE_PROFIT_TRAINING` | 28,920 | Rolling voyage profit records for profit prediction (8 ships x ~723 dates x 5 durations) |
 | `CASINO_POLICIES` | 15 | Policy documents for Cortex Search RAG |
 | `MODEL_EVALUATION_SUMMARY` | 2 | ML model performance metrics |
 
@@ -165,6 +171,7 @@ in **banks** and priced at the ship level based on passenger demographics, not i
 | Denomination Classifier | `DENOMINATION_CLASSIFIER_REG` | GradientBoostingClassifier | Predicts denomination from member features |
 | Bet Amount Classifier | `BET_AMOUNT_CLASSIFIER_REG` | GradientBoostingClassifier | Predicts bet category from member features |
 | Bank Demand Model | `BANK_DENOMINATION_MODEL` | MultiOutputRegressor (GBR) | Predicts denomination demand % per ship |
+| Voyage Profit Model | `VOYAGE_PROFIT_MODEL` | GradientBoostingRegressor | Predicts per-voyage casino slot profit (R²=0.54, MAE=$73.6K) |
 
 ### Stored Procedures
 
@@ -200,16 +207,25 @@ A 4-tab interactive analytics application with Carni brand styling:
 |-----|----------|
 | **Member Overview** | KPIs, tier distribution (donut), age by gender (grouped bars), income/state charts |
 | **Slot Analytics** | Ship filter, revenue by denomination, top games, time patterns, monthly trend |
-| **ML Models** | Model performance cards, confusion matrix heatmap, feature importance, live predictions, interactive denomination predictor, **Bank Denomination Allocator** |
+| **ML Models** | **Casino Floor Optimizer**, interactive denomination predictor, voyage profit predictor, model performance cards, confusion matrix, feature importance, live predictions |
 | **Policies & Info** | Expandable policy documents by category |
 
-#### Bank Denomination Allocator
+#### Casino Floor Bank Denomination Optimizer
 
-The ML Models tab includes a bank allocation tool that:
-1. Selects a ship and bank size (number of machines)
-2. Queries `SHIP_BANK_DEMAND` for the ship's denomination demand profile
-3. Allocates machines using `floor()` + remainder-based rounding
-4. Displays a bar chart and allocation summary ensuring exact machine count
+The ML Models tab features an interactive SVG casino deck layout that:
+1. Selects a ship, departure port, voyage duration, and passenger profile
+2. Applies demographic-aware denomination shifting based on port profile, passenger age, and voyage duration
+3. Renders an 8-zone casino floor map (Entrance, Bar, Center Floor, VIP Lounge, High Limit Room, Poolside, Promenade, Aft Lounge)
+4. Each zone applies location-specific adjustments (e.g., High Limit Room boosts high denominations, Poolside favors lower ones)
+5. Color-coded denomination badges per zone with per-zone allocation breakdown
+
+#### Voyage Profit Predictor
+
+Forecasts total casino slot profit for a ship voyage:
+1. Selects ship, departure date, voyage duration, and expected passenger count
+2. Queries historical voyage profit data from `VOYAGE_PROFIT_TRAINING`
+3. Applies demographic adjustment factor based on passenger profile
+4. Displays profit prediction card, daily breakdown chart, and cross-ship comparison
 
 ### 2. Semantic View
 
@@ -357,11 +373,11 @@ CoCo_Carni/
 
 | Object Type | Name | Location |
 |-------------|------|----------|
-| Database | `Carni_CASINO` | Account |
-| Schema | `SLOT_ANALYTICS` | Carni_CASINO |
-| Tables (13) | MEMBER_DEMOGRAPHICS, SLOT_PLAY_HISTORY, SHIP_BANK_DEMAND, CASINO_POLICIES, MEMBER_SLOT_FEATURES, ML_TRAINING_DATA, SHIP_DAILY_METRICS, SHIP_WIN_RATE_TRAINING, DENOMINATION_PREDICTIONS, BET_PREDICTIONS, SHIP_WIN_RATE_PREDICTIONS, MODEL_EVALUATION_SUMMARY, SLOT_PLAY_HISTORY_OLD | SLOT_ANALYTICS |
+| Database | `CARNIVAL_CASINO` | Account |
+| Schema | `SLOT_ANALYTICS` | CARNIVAL_CASINO |
+| Tables (15) | MEMBER_DEMOGRAPHICS, SLOT_PLAY_HISTORY, SHIP_BANK_DEMAND, SHIP_PORT_PROFILES, VOYAGE_PROFIT_TRAINING, CASINO_POLICIES, MEMBER_SLOT_FEATURES, ML_TRAINING_DATA, SHIP_DAILY_METRICS, SHIP_WIN_RATE_TRAINING, DENOMINATION_PREDICTIONS, BET_PREDICTIONS, SHIP_WIN_RATE_PREDICTIONS, MODEL_EVALUATION_SUMMARY, SLOT_PLAY_HISTORY_OLD | SLOT_ANALYTICS |
 | ML Models (Built-in) | DENOMINATION_CLASSIFIER, BET_AMOUNT_CLASSIFIER, SHIP_WIN_RATE_CLASSIFIER | SLOT_ANALYTICS |
-| ML Models (Registry) | SLOT_DENOMINATION_MODEL, DENOMINATION_CLASSIFIER_REG, BET_AMOUNT_CLASSIFIER_REG, BANK_DENOMINATION_MODEL | SLOT_ANALYTICS |
+| ML Models (Registry) | SLOT_DENOMINATION_MODEL, DENOMINATION_CLASSIFIER_REG, BET_AMOUNT_CLASSIFIER_REG, BANK_DENOMINATION_MODEL, VOYAGE_PROFIT_MODEL | SLOT_ANALYTICS |
 | Stored Procedures | PREDICT_DENOMINATION, PREDICT_DENOMINATION_V2, PREDICT_BET_CATEGORY, PREDICT_SHIP_WIN_RATE | SLOT_ANALYTICS |
 | Semantic View | CASINO_SLOT_SEMANTIC_VIEW | SLOT_ANALYTICS |
 | Cortex Search | CASINO_POLICIES_SEARCH | SLOT_ANALYTICS |

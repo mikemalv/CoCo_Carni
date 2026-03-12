@@ -84,7 +84,32 @@ CREATE OR REPLACE TABLE SHIP_BANK_DEMAND (
 );
 
 -- =============================================================================
--- TABLE 5: MODEL_EVALUATION_SUMMARY
+-- TABLE 5: VOYAGE_PROFIT_TRAINING
+-- Aggregated voyage-level records for profit prediction model
+-- Generated from SHIP_DAILY_METRICS + MEMBER_DEMOGRAPHICS via rolling windows
+-- =============================================================================
+CREATE OR REPLACE TABLE VOYAGE_PROFIT_TRAINING (
+    SHIP_NAME VARCHAR(50),
+    DEPARTURE_DATE DATE,
+    VOYAGE_DURATION NUMBER(2,0),
+    DEPARTURE_MONTH NUMBER(2,0),
+    DEPARTURE_DOW NUMBER(1,0),
+    TOTAL_WAGERED FLOAT,
+    TOTAL_WON FLOAT,
+    TOTAL_PROFIT FLOAT,
+    AVG_DAILY_SESSIONS FLOAT,
+    AVG_DAILY_PLAYERS FLOAT,
+    AVG_PASSENGER_AGE FLOAT,
+    PCT_MALE FLOAT,
+    PCT_HIGH_TIER FLOAT,
+    PCT_HIGH_INCOME FLOAT,
+    PCT_HIGH_RISK FLOAT,
+    AVG_CRUISES FLOAT,
+    AVG_LIFETIME_SPEND FLOAT
+);
+
+-- =============================================================================
+-- TABLE 6: MODEL_EVALUATION_SUMMARY
 -- Stores ML model performance metrics
 -- =============================================================================
 CREATE OR REPLACE TABLE MODEL_EVALUATION_SUMMARY (

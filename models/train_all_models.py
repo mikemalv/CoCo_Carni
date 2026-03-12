@@ -9,11 +9,12 @@ Models:
   2. DENOMINATION_CLASSIFIER_REG (V1) - GradientBoosting: predicts denomination from member features
   3. BET_AMOUNT_CLASSIFIER_REG (V1) - GradientBoosting: predicts bet category from member features
   4. BANK_DENOMINATION_MODEL (V1) - MultiOutput GBR: predicts denomination demand % per ship
+  5. VOYAGE_PROFIT_MODEL (V1) - GBR: predicts total casino profit for a ship voyage
 
 Usage:
   SNOWFLAKE_CONNECTION_NAME=demo python models/train_all_models.py
   SNOWFLAKE_CONNECTION_NAME=demo python models/train_all_models.py --model denomination
-  SNOWFLAKE_CONNECTION_NAME=demo python models/train_all_models.py --model bank
+  SNOWFLAKE_CONNECTION_NAME=demo python models/train_all_models.py --model voyage
   SNOWFLAKE_CONNECTION_NAME=demo python models/train_all_models.py --model all
 """
 
@@ -335,12 +336,86 @@ def train_bank_model(session, reg):
 
 
 # ---------------------------------------------------------------------------
+# Model 5: VOYAGE_PROFIT_MODEL (GradientBoostingRegressor)
+# ---------------------------------------------------------------------------
+def train_voyage_profit_model(session, reg):
+    print("\n" + "=" * 70)
+    print("MODEL 5: VOYAGE_PROFIT_MODEL (GradientBoostingRegressor)")
+    print("=" * 70)
+
+    print("Loading voyage training data...")
+    df = session.sql(f"""
+        SELECT * FROM {DB}.{SCHEMA}.VOYAGE_PROFIT_TRAINING
+    """).to_pandas()
+    print(f"Loaded {len(df)} voyage records")
+
+    ship_le = LabelEncoder()
+    df['SHIP_ENCODED'] = ship_le.fit_transform(df['SHIP_NAME'])
+
+    feature_cols = [
+        'SHIP_ENCODED', 'DEPARTURE_MONTH', 'DEPARTURE_DOW', 'VOYAGE_DURATION',
+        'AVG_PASSENGER_AGE', 'PCT_MALE', 'PCT_HIGH_TIER', 'PCT_HIGH_INCOME',
+        'PCT_HIGH_RISK', 'AVG_CRUISES', 'AVG_LIFETIME_SPEND', 'AVG_DAILY_PLAYERS'
+    ]
+
+    X = df[feature_cols].values
+    y = df['TOTAL_PROFIT'].values
+
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    print(f"Train: {len(X_train)}, Test: {len(X_test)}")
+
+    print("Training GradientBoostingRegressor...")
+    model = GradientBoostingRegressor(
+        n_estimators=200, max_depth=5, learning_rate=0.1,
+        min_samples_split=5, random_state=42
+    )
+    model.fit(X_train, y_train)
+
+    y_pred = model.predict(X_test)
+    mae = mean_absolute_error(y_test, y_pred)
+    r2 = r2_score(y_test, y_pred)
+    print(f"Test MAE: ${mae:,.2f}")
+    print(f"Test R²: {r2:.4f}")
+
+    print("Training final model on all data...")
+    model.fit(X, y)
+
+    pkl_path = os.path.join(PROJECT_DIR, 'voyage_profit_model.pkl')
+    with open(pkl_path, 'wb') as f:
+        pickle.dump({
+            'model': model,
+            'ship_label_encoder': ship_le,
+            'feature_cols': feature_cols,
+            'ships': list(ship_le.classes_),
+        }, f)
+    print(f"Pickle saved to {pkl_path}")
+
+    print("Registering to Snowflake Model Registry...")
+    sample_input = pd.DataFrame(X[:10], columns=feature_cols)
+    try:
+        mv = reg.log_model(
+            model,
+            model_name="VOYAGE_PROFIT_MODEL",
+            version_name="V1",
+            sample_input_data=sample_input,
+            conda_dependencies=["scikit-learn"],
+            target_platforms=["SNOWPARK_CONTAINER_SERVICES"],
+            metrics={"mae": float(mae), "r2": float(r2)},
+            comment="GBR regressor: predicts total casino slot profit for a ship voyage based on duration and passenger demographics"
+        )
+        print(f"Registered: {mv.model_name} V1")
+    except Exception as e:
+        print(f"Registry error: {e}")
+        print("Model saved locally — use SQL lookups from VOYAGE_PROFIT_TRAINING for Streamlit inference")
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 def main():
     parser = argparse.ArgumentParser(description="Train and register Carnival Casino ML models")
-    parser.add_argument("--model", choices=["denomination", "registry", "bank", "all"], default="all",
-                        help="Which model(s) to train: denomination, registry, bank, or all (default: all)")
+    parser.add_argument("--model", choices=["denomination", "registry", "bank", "voyage", "all"], default="all",
+                        help="Which model(s) to train: denomination, registry, bank, voyage, or all (default: all)")
     args = parser.parse_args()
 
     session = get_session()
@@ -354,6 +429,9 @@ def main():
 
     if args.model in ("bank", "all"):
         train_bank_model(session, reg)
+
+    if args.model in ("voyage", "all"):
+        train_voyage_profit_model(session, reg)
 
     print("\nDone!")
     session.close()
